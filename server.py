@@ -1,19 +1,19 @@
 import asyncio
-from contextlib import asynccontextmanager, suppress
-from fastapi import FastAPI, APIRouter
-from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-import os
 import logging
+import os
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
+from dotenv import load_dotenv
+from fastapi import APIRouter, FastAPI
+from starlette.middleware.cors import CORSMiddleware
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 # MongoDB connection
-from lib.db import client, ensure_indexes
 from clerk_auth import clerk_router
+from lib.db import client, ensure_indexes
 from routers.books import router as books_router
 from routers.library import router as library_router
 
@@ -41,9 +41,7 @@ async def root():
 
 api_router.include_router(books_router)
 api_router.include_router(library_router)
-
 app.include_router(clerk_router)  # /api/clerk/config and /api/__clerk/*
-# Include the router in the main app
 app.include_router(api_router)
 
 app.add_middleware(
