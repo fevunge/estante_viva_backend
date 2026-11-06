@@ -26,10 +26,15 @@ O chatbot foi REMOVIDO a pedido do usuário.
   `GET /me` · `GET|POST /me/books/{book_id}/notes` · `PUT|DELETE /me/notes/{id}` · `GET|POST /me/books/{book_id}/bookmarks` (POST idempotente por página) · `DELETE /me/bookmarks/{id}` · `GET|PUT /me/progress/{book_id}` · `GET /me/recent`
 - Admin: `GET /admin/stats` · `POST /admin/books` · `PUT /admin/books/{id}` · `DELETE /admin/books/{id}` (também apaga notas/marcadores/progresso daquele livro)
 
-## Dados (MongoDB)
+## Dados
 
-- `books`, PDFs/capas no GridFS (bucket `files`), `users` {user_id, role, email, env}
+### MongoDB
+
 - `notes` {id, user_id, book_id, page, text, created_at, updated_at}
 - `bookmarks` {id, user_id, book_id, page, label, created_at} (único por user+book+page)
 - `reading_progress` {user_id, book_id, page, total_pages, updated_at}
 - Contas/senhas ficam no Clerk (não no banco do app).
+
+### Supabase Storage
+
+- `books`, PDFs/capas no bucket `books`
