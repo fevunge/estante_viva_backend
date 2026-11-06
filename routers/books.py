@@ -4,19 +4,17 @@ import re
 import uuid
 from datetime import datetime, timezone
 
-from bson import ObjectId
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
-from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 from starlette.concurrency import run_in_threadpool
 
+from lib import storage
 from lib.admin import require_admin
 from lib.db import db
 from lib.pdf import count_pages, render_cover
 from models.books import AdminStats, Book
 
 router = APIRouter()
-fs = AsyncIOMotorGridFSBucket(db, bucket_name="files")
 
 PALETTE = ["#585b70", "#f38ba8", "#a6e3a1", "#f9e2af", "#89b4fa", "#f5c2e7", "#94e2d5"]
 MAX_PDF_BYTES = 80 * 1024 * 1024
@@ -33,7 +31,7 @@ def _to_book(doc: dict) -> Book:
             for k in Book.model_fields
             if k not in ("has_cover", "created_at", "updated_at")
         },
-        has_cover=bool(doc.get("cover_file_id")),
+        has_cover=bool(doc.get("cover_path")),
         created_at=_aware(doc["created_at"]),
         updated_at=_aware(doc["updated_at"]),
     )
@@ -46,12 +44,8 @@ async def _get_doc(book_id: str) -> dict:
     return doc
 
 
-async def _delete_file(file_id: str | None) -> None:
-    if file_id:
-        try:
-            await fs.delete(ObjectId(file_id))
-        except Exception:
-            pass
+async def _delete_file(path: str | None) -> None:
+    await storage.delete(path)
 
 
 async def _store_pdf(book_id: str, data: bytes) -> dict:
@@ -65,40 +59,39 @@ async def _store_pdf(book_id: str, data: bytes) -> dict:
         page_count = await run_in_threadpool(count_pages, data)
     except Exception:
         raise HTTPException(status_code=400, detail="Não foi possível ler este PDF")
-    file_id = await fs.upload_from_stream(
-        f"{book_id}.pdf", data, metadata={"contentType": "application/pdf"}
-    )
+    path = f"pdfs/{book_id}.pdf"
+    await storage.upload(path, data, "application/pdf")
     return {
-        "pdf_file_id": str(file_id),
+        "pdf_path": path,
         "page_count": page_count,
         "size_bytes": len(data),
     }
 
 
 async def _store_cover(book_id: str, data: bytes, content_type: str) -> str:
-    fid = await fs.upload_from_stream(
-        f"{book_id}-cover", data, metadata={"contentType": content_type}
-    )
-    return str(fid)
+    path = f"covers/{book_id}"
+    await storage.upload(path, data, content_type)
+    return path
 
 
-async def _stream_file(file_id: str, media_type: str, filename: str | None = None):
-    try:
-        grid_out = await fs.open_download_stream(ObjectId(file_id))
-    except Exception:
-        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+async def _stream_file(
+    path: str,
+    media_type: str,
+    filename: str | None = None,
+    size: int | None = None,
+):
+    obj = await storage.open_object(path)
 
     async def chunks():
-        while True:
-            chunk = await grid_out.readchunk()
-            if not chunk:
-                break
-            yield chunk
+        try:
+            async for chunk in obj.aiter_bytes():
+                yield chunk
+        finally:
+            await obj.aclose()
 
-    headers = {
-        "Cache-Control": "public, max-age=3600",
-        "Content-Length": str(grid_out.length),
-    }
+    headers = {"Cache-Control": "public, max-age=3600"}
+    if size:
+        headers["Content-Length"] = str(size)
     if filename:
         headers["Content-Disposition"] = f'inline; filename="{filename}"'
     return StreamingResponse(chunks(), media_type=media_type, headers=headers)
@@ -133,15 +126,17 @@ async def get_book(book_id: str):
 @router.get("/books/{book_id}/pdf")
 async def get_pdf(book_id: str):
     doc = await _get_doc(book_id)
-    return await _stream_file(doc["pdf_file_id"], "application/pdf", f"{book_id}.pdf")
+    return await _stream_file(
+        doc["pdf_path"], "application/pdf", f"{book_id}.pdf", doc["size_bytes"]
+    )
 
 
 @router.get("/books/{book_id}/cover")
 async def get_cover(book_id: str):
     doc = await _get_doc(book_id)
-    if not doc.get("cover_file_id"):
+    if not doc.get("cover_path"):
         raise HTTPException(status_code=404, detail="Sem capa")
-    return await _stream_file(doc["cover_file_id"], doc.get("cover_type", "image/jpeg"))
+    return await _stream_file(doc["cover_path"], doc.get("cover_type", "image/jpeg"))
 
 
 # ---------- admin ----------
@@ -214,7 +209,7 @@ async def create_book(
         or "Geral",
         "color": color if color in PALETTE else PALETTE[count % len(PALETTE)],
         **pdf_info,
-        "cover_file_id": cover_info[0] if cover_info else None,
+        "cover_path": cover_info[0] if cover_info else None,
         "cover_type": cover_info[1] if cover_info else None,
         "created_at": now,
         "updated_at": now,
@@ -223,9 +218,15 @@ async def create_book(
     return _to_book(doc)
 
 
-async def _read_file(file_id: str) -> bytes:
-    stream = await fs.open_download_stream(ObjectId(file_id))
-    return await stream.read()
+async def _read_file(path: str) -> bytes:
+    obj = await storage.open_object(path)
+    try:
+        data = b""
+        async for chunk in obj.aiter_bytes():
+            data += chunk
+        return data
+    finally:
+        await obj.aclose()
 
 
 @router.put("/admin/books/{book_id}", response_model=Book)
@@ -254,14 +255,14 @@ async def update_book(
         update["color"] = color
     if pdf is not None and pdf.filename:
         update.update(await _store_pdf(book_id, await pdf.read()))
-        await _delete_file(doc.get("pdf_file_id"))
+        await _delete_file(doc.get("pdf_path"))
     cover_info = await _cover_from_upload(book_id, cover)
     if cover_info:
-        await _delete_file(doc.get("cover_file_id"))
-        update["cover_file_id"], update["cover_type"] = cover_info
+        await _delete_file(doc.get("cover_path"))
+        update["cover_path"], update["cover_type"] = cover_info
     elif remove_cover:
-        await _delete_file(doc.get("cover_file_id"))
-        update["cover_file_id"], update["cover_type"] = None, None
+        await _delete_file(doc.get("cover_path"))
+        update["cover_path"], update["cover_type"] = None, None
     await db.books.update_one({"id": book_id}, {"$set": update})
     return _to_book(await _get_doc(book_id))
 
