@@ -29,7 +29,8 @@ numpy>=1.26.0
 python-multipart>=0.0.9
 jq>=1.6.0
 typer>=0.9.0
-#emergentintegrations==0.2.2
+#emergentintegrations==0.2.2opencode -s ses_e5135571cffe4BaU6hMKAocoOE
+pillow>=11.0.0
 pypdf==6.21.4
 pypdfium2==5.14.0
 
