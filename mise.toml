@@ -1,0 +1,12 @@
+[tools]
+python = "3.12"
+
+[settings]
+python.uv_venv_auto = true
+
+[shell_alias]
+py = "python"
+
+[tasks.requirements]
+description = "Install dependencies from requirements.txt"
+run = "uv pip install -r requirements.txt"
