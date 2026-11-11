@@ -7,6 +7,10 @@ python.uv_venv_auto = true
 [shell_alias]
 py = "python"
 
+[tasks.start]
+description = "Start the application"
+run = "uv run server.py"
+
 [tasks.requirements]
 description = "Install dependencies from requirements.txt"
 run = "uv pip install -r requirements.txt"
