@@ -10,9 +10,9 @@ from pymongo import ASCENDING, DESCENDING, IndexModel
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-mongo_url = os.environ["MONGO_URL"]
+mongo_url = os.environ["DATABASE_URL"]
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ["DB_NAME"]]
+db = client[os.environ["DATABASE_NAME"]]
 
 logger = logging.getLogger(__name__)
 
