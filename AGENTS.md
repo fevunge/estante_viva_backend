@@ -81,6 +81,9 @@ uv pip install -r requirements.txt
 # servidor (porta usada pelos testes)
 .venv/bin/uvicorn server:app --reload --port 8001
 
+# alternativa: sobe o mesmo app com porta padrão 8001 (HOST/PORT sobrescrevem)
+python server.py
+
 # testes (exigem servidor rodando em :8001)
 .venv/bin/pytest
 
@@ -88,9 +91,9 @@ uv pip install -r requirements.txt
 .venv/bin/python -c "import server"
 ```
 
-Variáveis esperadas pelo código: `MONGO_URL`, `DB_NAME`, `CORS_ORIGINS`, `APP_TZ`,
+Variáveis esperadas pelo código: `DATABASE_URL`, `DATABASE_NAME`, `CORS_ORIGINS`, `APP_TZ`,
 `ADMIN_EMAIL`, `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`.
-Sem `MONGO_URL`/`DB_NAME`, `lib/db.py` falha no import.
+Sem `DATABASE_URL`/`DATABASE_NAME`, `lib/db.py` falha no import.
 
 ## 7. Verificação antes de dizer "pronto"
 
